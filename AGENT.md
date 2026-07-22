@@ -1,88 +1,710 @@
-Binding rules for AI + engineers. Conflict with this file → STOP and ask.
-Legend: ✅ required · ❌ forbidden · ⚠️ anti-pattern · 🛑 hard-stop. When unsure → stricter, simpler option.
+Tôi sẽ xem đây như bước **phân tích nghiệp vụ + thiết kế core domain**, chưa đi vào code. Mục tiêu là tạo một nền tảng đủ rõ để sau này bạn vẽ:
 
-## 1. Principles
-- Dependencies point inward: UI → Service → Domain (domain depends on nothing).
-- One module = one reason to change. KISS. DRY only after 3rd repetition. YAGNI.
-- ❌ Framework types crossing layers. ❌ Hidden global/mutable state.
+* Mindmap hệ thống
+* Use Case Diagram
+* Domain Model
+* Architecture Diagram
+* Database Design
 
-## 2. Java (Spring Boot)
-Layers: Controller → Service → Repository (each calls only the one below).
-- Naming: classes `PascalCase`, members `camelCase`, const `UPPER_SNAKE`. Suffix by role: `*Controller/*Service/*Repository/*Request/*Response/*Mapper/*Exception`. Package by feature.
-- Controller: map HTTP↔DTO, `@Valid`, call one service, return DTO. ❌ logic/loops/DB/entities.
-- Service: ALL business logic, rules, orchestration; DTO/domain only. ❌ HTTP types.
-- Repository: persistence only. ❌ logic, DTO mapping, calling other repos/services.
-- ✅ Entities never cross controller boundary. `@Transactional` on service (`readOnly` for reads).
-- ❌ `@Transactional` on controller/repo/self-invoked. ❌ swallow exceptions, exceptions as control flow, `500` for business errors.
-- ✅ Typed domain exceptions → one `@RestControllerAdvice`. Constructor injection + `final`.
-- ❌ Field injection, `Util/Helper/Manager` dumping grounds, returning `null` (use `Optional`).
-- ⚠️ Fat controller, anemic service, N+1.
+Tôi sẽ không bắt đầu từ công nghệ, mà bắt đầu từ **bản chất sản phẩm**.
 
-## 3. React
-- Functional components + hooks only; small, single-purpose; TypeScript strict.
-- Naming: components/types `PascalCase`, hooks `useXxx`, vars `camelCase`. One component/file, named exports. Feature-based co-located folders (`components/ hooks/ services/ types.ts`).
-- ✅ Split presentation (props in) from logic (custom hooks). Hooks at top level; full deps arrays.
-- ✅ Network only via `services/api` + React Query/SWR. Local state first; global store only for auth/theme.
-- ❌ Business logic in UI (pricing/tax/eligibility = backend). ❌ `fetch`/`axios` in components. ❌ side effects in render, `useEffect` for derived state (use `useMemo`), mutate props, store derived/duplicated server data, `any`, class components.
-- ⚠️ useEffect waterfalls, deep prop drilling.
+---
 
-## 4. Salesforce (Apex + LWC)
-Apex layers: Trigger → Handler → Service → Selector(SOQL)/Domain. Assume 200+ records always.
-- Naming: `*TriggerHandler/*Service/*Selector/*Domain/*Test`; custom fields `__c`. One trigger/object. Declare `with sharing` on every class.
-- ✅ Bulk query/DML; pre-load into `Map`, look up in loop. Logic-free, recursion-safe triggers.
-- ❌ SOQL/DML in loops. ❌ hardcoded IDs (use Custom Metadata). ❌ logic in trigger body. ❌ `without sharing` unless justified.
-- LWC: data down via `@api`, events up via `CustomEvent`, `@wire` for data. ❌ mutate `@api`, business rules in JS (push to Apex), cross-component DOM access.
-- ⚠️ SOQL/DML in loop, recursive trigger without guard, `@api` mutation.
+# 1. Định nghĩa lại bài toán
 
-## 5. API & Integration
-- One envelope: `{ success, data, error:{code,message,details}, timestamp }`.
-- Status: 400 validation · 401/403 auth · 404 missing · 409 conflict · 422 business · 500 unexpected. Centralize mapping.
-- ❌ Stack traces/SQL to clients, ad-hoc error shapes.
-- Java↔React: versioned REST `/api/v1`, typed contracts from OpenAPI.
-- SF↔Backend: Named Credentials, idempotent, retry-safe, heavy work async. ❌ sync callouts in triggers.
+## Tên tạm
 
-## 6. Testing
-- Java: JUnit5+Mockito (services), `@WebMvcTest`/`@DataJpaTest`; test edge/failure paths.
-- React: RTL behavior tests, mock API layer. ❌ implementation-detail tests.
-- Salesforce: >75% coverage floor with real assertions; bulk tests (200+ records); data in-test.
-- ❌ Coverage-only tests without assertions.
+**Project Knowledge Intelligence System**
 
-## 7. Security
-- Validate/sanitize server-side (allow-list). Parameterized queries / bind vars only.
-- Authn + authz on every endpoint; FLS/sharing in Apex (`WITH SECURITY_ENFORCED`). Secrets in vault/Named Credentials.
-- ❌ String-built SQL/SOQL, secrets/PII in code or logs, `dangerouslySetInnerHTML` on untrusted data, UI hiding as access control.
+Mục tiêu:
 
-## 8. Performance
-- Java: no N+1 (fetch join/`@EntityGraph`), paginate, select needed columns.
-- React: prevent re-renders (stable keys, `useMemo`/`useCallback` where measured), virtualize lists, code-split.
-- Salesforce: selective SOQL on indexed fields, async for heavy work, no overfetching.
+> Biến tài liệu dự án (Markdown/CSV) thành một hệ thống tri thức có cấu trúc, có khả năng truy vấn ảnh hưởng, phụ thuộc, lịch sử quyết định và quan hệ giữa các thành phần.
 
-## 9. AI Guardrails
+---
 
-### 9.1 Pre-flight (before coding)
-Answer all four, else STOP and ask:
-- Restate task + affected layers. - Verify every API/field/type/schema exists. - Find existing pattern to follow. - List unknowns/assumptions.
+# 2. Vấn đề thực tế cần giải quyết
 
-### 9.2 Self-check (before returning code) — fix or flag, don't ship failures
-- All symbols verified (no invented). - Boundaries respected. - Matches patterns/naming, no unapproved deps.
-- Handles errors/nulls/edge/bulk. - Security: validated, authz, no secrets, no string SQL/SOQL. - In scope. - Assumptions/`TODO: verify` stated.
+Trong một project lớn:
 
-### 9.3 Hard-stop — refuse/ask, never guess
-🛑 Symbol can't be verified · must invent contract/schema/config · forced boundary violation · new dep without approval · ambiguous/contradictory request · changes a public contract/schema/security control unauthorized.
-Output: the blocker + the question needed. Never fill gaps with guesses.
+```text
+Project
+ |
+ +-- Requirement
+ |
+ +-- Design
+ |
+ +-- Decision
+ |
+ +-- API
+ |
+ +-- Database
+ |
+ +-- Deployment
+ |
+ +-- Issue
+```
 
-### MUST / MUST NOT
-- ✅ Reuse patterns/naming/utilities; read before writing; ask when uncertain; explicit > magic; stay in scope; state assumptions.
-- ❌ Invent APIs/fields/schema/config; hallucinate schema; add frameworks without approval; cross boundaries; use reflection/metaprogramming over explicit code; change contracts/schema silently; rewrite out-of-scope code.
-- Rule: can't point to where a symbol is defined → don't use it.
+Tri thức nằm rải rác:
 
-## 10. Review Checklist (blocking)
-- [ ] Thin controllers; logic in services; repos/selectors persistence only; DTOs at boundary.
-- [ ] No direct fetch / no business logic in React/LWC; SF one trigger/object, SOQL in selectors.
-- [ ] `@Transactional` on service; no SOQL/DML in loops; Apex bulkified; no N+1; reads paginated.
-- [ ] Server validation + authz everywhere; FLS/sharing enforced; no secrets/PII; standard envelope + status.
-- [ ] Pre-flight done; self-check (§9.2) passed; no invented symbols; no unapproved deps; scope respected; assumptions stated.
-- [ ] Meaningful tests with assertions (behavior, bulk-safe for SF).
-- [ ] Explicit readable code; no dead code, no leftover `console.log`/`System.debug`.
+```
+payment.md
+architecture.md
+api.md
+decision.md
+database.md
+```
 
-Final rule: stricter, simpler, more explicit — and ask. Boring maintainable code > clever code that breaks at scale.
+Con người hiểu:
+
+> "Nếu đổi payment_status thì cần sửa những đâu?"
+
+Nhưng máy không biết.
+
+---
+
+# 3. Core concept của hệ thống
+
+Không lấy Document làm trung tâm.
+
+Sai:
+
+```
+Document
+   |
+   |
+AI đọc
+```
+
+Đúng:
+
+```
+Knowledge Model
+        |
+        |
+Document là nguồn chứng cứ
+```
+
+---
+
+# 4. Các thực thể cốt lõi (Core Domain)
+
+Tôi đề xuất 7 entity chính.
+
+---
+
+# Entity 1: Project
+
+Đại diện một dự án.
+
+Ví dụ:
+
+```
+E-Commerce System
+```
+
+Thuộc tính:
+
+```
+Project
+ |
+ + name
+ + description
+ + members
+ + created_at
+```
+
+---
+
+# Entity 2: Source Document
+
+Tài liệu gốc.
+
+Ví dụ:
+
+```
+payment-flow.md
+database-design.md
+```
+
+Vai trò:
+
+**Source of Truth**
+
+Không phải graph.
+
+---
+
+Quan hệ:
+
+```
+Project
+
+   contains
+
+Document
+```
+
+---
+
+# Entity 3: Knowledge Node (quan trọng nhất)
+
+Đây là ý tưởng "keyword" của bạn nhưng nâng cấp.
+
+Không gọi keyword.
+
+Gọi:
+
+## Concept Node
+
+Ví dụ:
+
+```
+Payment
+User
+Order
+Authentication
+Database
+Redis
+Stripe
+```
+
+Mỗi node có:
+
+```
+Concept
+
+id
+
+name
+
+type
+
+description
+
+aliases
+
+owner
+```
+
+---
+
+Node type:
+
+Ví dụ:
+
+```
+Business Concept
+
+Technical Component
+
+Decision
+
+System
+
+API
+
+Database Entity
+```
+
+---
+
+# Entity 4: Relation
+
+Quan hệ giữa node.
+
+Ví dụ:
+
+```
+Payment
+
+depends_on
+
+Stripe API
+```
+
+hoặc:
+
+```
+Order
+
+creates
+
+Transaction
+```
+
+Model:
+
+```
+Relation
+
+source
+
+target
+
+type
+
+confidence
+
+created_by
+```
+
+---
+
+# Entity 5: Evidence
+
+Đây là phần rất quan trọng.
+
+Mọi tri thức phải có nguồn.
+
+Ví dụ:
+
+AI nói:
+
+> Payment sử dụng Stripe
+
+Evidence:
+
+```
+payment.md
+
+line 25-30
+
+"PaymentService calls Stripe API"
+```
+
+---
+
+Model:
+
+```
+Evidence
+
+document_id
+
+position
+
+content
+
+linked_node
+```
+
+---
+
+# Entity 6: Annotation
+
+Đây là lớp con người tương tác.
+
+Ví dụ:
+
+User upload:
+
+```
+payment.md
+```
+
+User gắn:
+
+```
+Payment
+Stripe
+Transaction
+```
+
+Đây chính là lớp semantic.
+
+---
+
+# Entity 7: Query / Investigation
+
+User không chỉ search.
+
+User điều tra.
+
+Ví dụ:
+
+```
+Impact Analysis
+
+"Đổi Payment ảnh hưởng gì?"
+```
+
+---
+
+# 5. User Roles
+
+Tôi nghĩ cần 4 role.
+
+---
+
+## Role 1: Knowledge Owner
+
+Người quản lý tri thức.
+
+Use case:
+
+* tạo concept
+* sửa concept
+* merge concept
+* quản lý taxonomy
+
+---
+
+## Role 2: Developer
+
+Sử dụng để hiểu hệ thống.
+
+Use case:
+
+* tìm dependency
+* xem architecture
+* xem decision
+
+---
+
+## Role 3: AI Agent
+
+Không phải user nhưng là actor.
+
+Nhiệm vụ:
+
+* suggest concept
+* detect relation
+* summarize
+
+---
+
+## Role 4: Admin
+
+Quản lý:
+
+* project
+* permission
+* storage
+
+---
+
+# 6. Core User Flow
+
+## Flow 1: Khởi tạo Project
+
+Actor:
+
+Knowledge Owner
+
+```
+Create Project
+
+      |
+      v
+
+Upload documents
+
+      |
+      v
+
+System parse files
+
+      |
+      v
+
+Create document index
+
+```
+
+---
+
+# Flow 2: Xây Semantic Layer
+
+Đây là core.
+
+```
+User creates Concept
+
+      |
+      v
+
+Payment
+
+      |
+      v
+
+Attach documents
+
+      |
+      v
+
+Build graph
+```
+
+---
+
+# Flow 3: AI Suggestion
+
+```
+New document
+
+      |
+      v
+
+System analyzes
+
+      |
+      v
+
+Suggest:
+
+Payment 90%
+API 80%
+Database 60%
+
+      |
+      v
+
+User approve
+```
+
+---
+
+# Flow 4: Knowledge Exploration
+
+User:
+
+```
+Show Payment
+```
+
+System:
+
+```
+Payment
+
+ |
+ + Stripe
+
+ |
+ + Transaction
+
+ |
+ + Payment DB
+```
+
+---
+
+# Flow 5: Impact Analysis
+
+Đây là killer feature.
+
+User:
+
+```
+Change PaymentStatus
+```
+
+System:
+
+Traversal:
+
+```
+PaymentStatus
+
+ |
+Database
+
+ |
+API
+
+ |
+Frontend
+
+ |
+Test Case
+
+```
+
+Output:
+
+```
+Affected:
+
+1. Payment API
+2. Order Service
+3. Dashboard
+4. Test scenario #22
+
+Evidence:
+
+xxx.md line 30
+```
+
+---
+
+# Flow 6: Decision Tracking
+
+Ví dụ:
+
+```
+Why use Redis Queue?
+```
+
+System:
+
+```
+Decision Node
+
+       |
+       |
+Evidence
+
+architecture.md
+
+line 50
+```
+
+---
+
+# 7. Mindmap tổng quan
+
+Bạn có thể vẽ như sau:
+
+```
+                 Project Knowledge System
+
+
+                         |
+        -----------------------------------
+        |                 |               |
+
+   Source Layer     Knowledge Layer   Intelligence Layer
+
+
+        |                 |               |
+
+ Documents          Concepts          AI Assistant
+
+ Markdown           Relations         Suggestion
+
+ CSV                Evidence          Reasoning
+
+
+                         |
+
+                 Investigation
+
+
+                         |
+
+              Impact Analysis
+              Dependency
+              Decision Search
+
+```
+
+---
+
+# 8. Core Architecture Principle
+
+Tôi nghĩ cần khóa 5 nguyên tắc:
+
+## 1. Document không phải Knowledge
+
+Document chỉ là evidence.
+
+---
+
+## 2. Human defines vocabulary
+
+Con người định nghĩa:
+
+"Project này có những khái niệm gì?"
+
+---
+
+## 3. AI assists, not owns truth
+
+AI đề xuất.
+
+Không tự quyết.
+
+---
+
+## 4. Everything traceable
+
+Mọi node/relation phải có evidence.
+
+---
+
+## 5. Incremental update
+
+Không rebuild toàn bộ.
+
+Chỉ update phần thay đổi.
+
+---
+
+# 9. Thứ tự xây MVP hợp lý
+
+Không làm AI trước.
+
+## Phase 1
+
+Document + Concept
+
+```
+Upload md
+
+Create concept
+
+Attach document
+```
+
+---
+
+## Phase 2
+
+Graph
+
+```
+Concept relation
+
+Graph visualization
+```
+
+---
+
+## Phase 3
+
+AI assistant
+
+```
+Suggest
+
+Summarize
+
+Query
+```
+
+---
+
+## Phase 4
+
+Impact Analysis
+
+```
+Change X
+
+Find affected Y
+```
+
+---
+
+Kết luận:
+
+Core của hệ thống này không phải là "RAG".
+Không phải "AI đọc file".
+Không phải "Graph database".
+
+Core là:
+
+> **Một Knowledge Model có kiểm soát, nơi Document là evidence, Concept là node, Relation là tri thức, AI là lớp hỗ trợ xây dựng và khai thác.**
+
+Nếu đi tiếp bước sau, tôi nghĩ nên thiết kế tiếp **Domain Model + Use Case Diagram chuẩn UML** trước khi chọn DB/framework.
